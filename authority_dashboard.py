@@ -370,13 +370,13 @@ def _run_ws_listener(data_queue: Queue):
 
 
 def main() -> None:
-    st.set_page_config(page_title="CityFlow AI - Authority Mode", layout="wide")
+    st.set_page_config(page_title="🚦 CityFlow AI - Authority Mode", layout="wide", page_icon="🚦")
     
     st.markdown(
-        f"# {_icon_html('activity', 26)}CityFlow AI - Authority Command Center",
+        f"# 🚦 {_icon_html('activity', 26)}CityFlow AI - Authority Command Center",
         unsafe_allow_html=True,
     )
-    st.subheader("Traffic Intelligence & Real-Time Control System")
+    st.subheader("🎯 Traffic Intelligence & Real-Time Control System")
     
     # Initialize session state for live monitoring
     if "live_monitoring_active" not in st.session_state:
@@ -400,12 +400,12 @@ def main() -> None:
     
     # Create tabs
     tab_overview, tab_analytics, tab_live = st.tabs(
-        ["Command Center Overview", "Analytics & Intelligence", "Live Monitoring"]
+        ["🎛️ Command Center Overview", "📊 Analytics & Intelligence", "📡 Live Monitoring"]
     )
     
     # ============ TAB 1: OVERVIEW ============
     with tab_overview:
-        st.markdown("### Real-Time Traffic Status")
+        st.markdown("### 🌆 Real-Time Traffic Status")
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -414,10 +414,10 @@ def main() -> None:
         low_count = sum(1 for z in zones_data if z["congestion_level"] == "LOW")
         avg_risk = round(np.mean([z["risk_score"] for z in zones_data]), 2)
         
-        col1.metric("High Alert Zones", high_count)
-        col2.metric("Medium Alert Zones", medium_count)
-        col3.metric("Low Alert Zones", low_count)
-        col4.metric("Avg Risk Score", avg_risk)
+        col1.metric("🔴 High Alert Zones", high_count)
+        col2.metric("🟡 Medium Alert Zones", medium_count)
+        col3.metric("🟢 Low Alert Zones", low_count)
+        col4.metric("⚠️ Avg Risk Score", avg_risk)
         
         st.divider()
         
@@ -529,21 +529,21 @@ def main() -> None:
     
     # ============ TAB 3: LIVE MONITORING ============
     with tab_live:
-        st.markdown("### Real-Time Traffic Corridor Monitoring")
-        st.info("Monitor specific corridors with live updates every 20 seconds")
+        st.markdown("### 📡 Real-Time Traffic Corridor Monitoring")
+        st.info("🔄 Monitor specific corridors with live updates every ~25 seconds")
         
         col1, col2 = st.columns(2)
         
         with col1:
             origin = st.text_input(
-                "Origin",
+                "📍 Origin",
                 value="Koramangala, Bangalore",
                 disabled=st.session_state.live_monitoring_active
             )
         
         with col2:
             destination = st.text_input(
-                "Destination",
+                "🎯 Destination",
                 value="MG Road, Bangalore",
                 disabled=st.session_state.live_monitoring_active
             )
@@ -552,7 +552,7 @@ def main() -> None:
         
         with col_btn1:
             if st.button(
-                "Start Monitoring",
+                "▶️ Start Monitoring",
                 disabled=st.session_state.live_monitoring_active,
                 type="primary",
                 use_container_width=True
@@ -576,14 +576,14 @@ def main() -> None:
                         )
                         st.session_state.ws_thread.start()
                         
-                        st.success("Monitoring started! Waiting for first update...")
+                        st.success("✅ Monitoring started! Waiting for first update...")
                         st.rerun()
                 else:
-                    st.error("Please enter both origin and destination")
+                    st.error("❌ Please enter both origin and destination")
         
         with col_btn2:
             if st.button(
-                "Stop Monitoring",
+                "⏹️ Stop Monitoring",
                 disabled=not st.session_state.live_monitoring_active,
                 type="secondary",
                 use_container_width=True
@@ -594,7 +594,7 @@ def main() -> None:
                 st.session_state.live_data = None
                 st.session_state.update_logs = []
                 st.session_state.update_counter = 0
-                st.success("Monitoring stopped")
+                st.success("⏹️ Monitoring stopped")
                 st.rerun()
         
         st.divider()
@@ -644,7 +644,7 @@ def main() -> None:
             col_current, col_log = st.columns([1, 1])
             
             with col_current:
-                st.markdown("### Live Traffic Data")
+                st.markdown("### 🚗 Live Traffic Data")
                 
                 if st.session_state.live_data:
                     data = st.session_state.live_data
@@ -658,21 +658,21 @@ def main() -> None:
                         # Alert banner
                         if data.get("alert"):
                             st.error(
-                                f"{_icon_html('alert-triangle', 20)} **CONGESTION ALERT** – Immediate Action Required",
+                                f"🚨 {_icon_html('alert-triangle', 20)} **CONGESTION ALERT** – Immediate Action Required",
                                 icon="🚨"
                             )
                         else:
                             st.success(
-                                f"{_icon_html('check-circle', 20)} Traffic Flow Stable",
+                                f"✅ {_icon_html('check-circle', 20)} Traffic Flow Stable",
                                 icon="✅"
                             )
                         
                         st.markdown("---")
                         
                         # Route info
-                        st.markdown(f"**Route:** {data['origin']} → {data['destination']}")
+                        st.markdown(f"**🛣️ Route:** {data['origin']} → {data['destination']}")
                         timestamp = datetime.fromisoformat(data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-                        st.caption(f"Last Update: {timestamp}")
+                        st.caption(f"🕐 Last Update: {timestamp}")
                     
                         st.markdown("---")
                         
@@ -681,7 +681,7 @@ def main() -> None:
                         
                         with col1:
                             st.metric(
-                                label="Congestion Index",
+                                label="📊 Congestion Index",
                                 value=f"{data['congestion_index']}",
                                 delta=f"{data['congestion_level']}"
                             )
@@ -690,21 +690,21 @@ def main() -> None:
                             # Color code delta based on risk
                             risk_color = "inverse" if data['risk_score'] > 7 else "normal"
                             st.metric(
-                                label="Risk Score",
+                                label="⚠️ Risk Score",
                                 value=f"{data['risk_score']}/10",
                                 delta=None
                             )
                         
                         with col3:
                             st.metric(
-                                label="Distance",
+                                label="📏 Distance",
                                 value=f"{data['distance_km']} km",
                                 delta=None
                             )
                         
                         with col4:
                             st.metric(
-                                label="Duration",
+                                label="⏱️ Duration",
                                 value=f"{data['duration_min']} min",
                                 delta=None
                             )
@@ -736,14 +736,14 @@ def main() -> None:
                         )
                     else:
                         # Invalid data structure received
-                        st.warning("Received incomplete data. Waiting for valid traffic update...")
+                        st.warning("⚠️ Received incomplete data. Waiting for valid traffic update...")
                 else:
-                    st.info("Waiting for traffic data... First update will arrive within 25 seconds.")
+                    st.info("⏳ Waiting for traffic data... First update will arrive within 25 seconds.")
             
             # Display update logs in the right column
             with col_log:
                 st.markdown("### 📋 Live Update Log")
-                st.caption(f"Updates arrive every ~25 seconds")
+                st.caption(f"🔄 Updates arrive every ~25 seconds")
                 
                 if st.session_state.update_logs:
                     # Create a scrollable container for logs
@@ -794,7 +794,7 @@ def main() -> None:
                             
                             st.markdown(log_html, unsafe_allow_html=True)
                 else:
-                    st.info("No updates yet. Waiting for first traffic data...")
+                    st.info("⏳ No updates yet. Waiting for first traffic data...")
             
             # Auto-refresh every 2 seconds to check for new data
             import time
@@ -802,10 +802,10 @@ def main() -> None:
             st.rerun()
         
         else:
-            st.info("Click 'Start Monitoring' to begin receiving live traffic updates")
+            st.info("👆 Click 'Start Monitoring' to begin receiving live traffic updates")
     
     st.divider()
-    st.caption("CityFlow AI - Smart City Traffic Intelligence | Authority Mode")
+    st.caption("🚦 CityFlow AI - Smart City Traffic Intelligence | Authority Mode")
 
 
 if __name__ == "__main__":
