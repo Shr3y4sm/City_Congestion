@@ -1,0 +1,10 @@
+requests
+python-dotenv
+xgboost
+pandas
+numpy
+scikit-learn
+streamlit
+folium
+polyline
+streamlit-folium
