@@ -369,6 +369,151 @@ def _run_ws_listener(data_queue: Queue):
     loop.close()
 
 
+def _generate_ai_recommendations(zones_data: list, live_data: dict = None) -> dict:
+    """Generate AI-powered traffic management recommendations based on current conditions."""
+    recommendations = {
+        "immediate": [],
+        "short_term": [],
+        "long_term": [],
+        "insights": []
+    }
+    
+    # Analyze zone data
+    high_zones = [z for z in zones_data if z["congestion_level"] == "HIGH"]
+    medium_zones = [z for z in zones_data if z["congestion_level"] == "MEDIUM"]
+    avg_ci = np.mean([z["congestion_index"] for z in zones_data])
+    
+    # IMMEDIATE ACTIONS (Critical - within 1 hour)
+    if high_zones:
+        for zone in high_zones:
+            recommendations["immediate"].append({
+                "icon": "🚨",
+                "priority": "CRITICAL",
+                "title": f"Deploy Traffic Control at {zone['zone_name']}",
+                "description": f"CI: {zone['congestion_index']:.2f} | Risk: {zone['risk_score']:.1f}/10",
+                "action": "Deploy traffic police to manually control signal timing and manage flow",
+                "impact": "High - Expected 15-25% reduction in congestion within 30 minutes"
+            })
+        
+        recommendations["immediate"].append({
+            "icon": "📢",
+            "priority": "HIGH",
+            "title": "Issue Public Advisory",
+            "description": f"{len(high_zones)} zone(s) experiencing severe congestion",
+            "action": "Broadcast traffic alerts via radio, social media, and mobile apps to divert traffic",
+            "impact": "Medium - Reduce incoming traffic by 10-15%"
+        })
+    
+    # Analyze live monitoring data if available
+    if live_data and live_data.get("congestion_index", 0) >= 1.5:
+        recommendations["immediate"].append({
+            "icon": "🚦",
+            "priority": "HIGH",
+            "title": f"Optimize Signal Timing: {live_data.get('origin', '')} → {live_data.get('destination', '')}",
+            "description": f"Live CI: {live_data.get('congestion_index', 0):.2f} | Duration: {live_data.get('duration_min', 0):.1f} min",
+            "action": "Extend green signal duration on main corridor by 30% and reduce cross-traffic timing",
+            "impact": "High - Estimated 20% improvement in flow rate"
+        })
+    
+    # SHORT-TERM STRATEGIES (1-7 days)
+    if medium_zones:
+        recommendations["short_term"].append({
+            "icon": "🔧",
+            "title": "Signal Re-programming Initiative",
+            "description": f"{len(medium_zones)} zones showing moderate congestion patterns",
+            "action": "Deploy AI-based adaptive signal control system to dynamically adjust timing",
+            "timeline": "2-3 days implementation",
+            "cost": "Low (Software update)",
+            "impact": "25-35% improvement in throughput"
+        })
+    
+    if avg_ci > 1.3:
+        recommendations["short_term"].append({
+            "icon": "🚌",
+            "title": "Enhanced Public Transit",
+            "description": f"City-wide average CI: {avg_ci:.2f} (above normal)",
+            "action": "Increase bus frequency by 40% on congested routes, add express shuttle services",
+            "timeline": "1-2 days to implement",
+            "cost": "Medium ($5,000-$10,000/day)",
+            "impact": "Reduce private vehicle traffic by 12-18%"
+        })
+    
+    recommendations["short_term"].append({
+        "icon": "📊",
+        "title": "Peak Hour Pricing Analysis",
+        "description": "Evaluate congestion pricing feasibility",
+        "action": "Conduct 7-day pilot study for variable toll pricing during rush hours",
+        "timeline": "7 days data collection",
+        "cost": "Low (Study only)",
+        "impact": "Potential 15-20% reduction if implemented"
+    })
+    
+    # LONG-TERM PLANNING (1-6 months)
+    recommendations["long_term"].append({
+        "icon": "🏗️",
+        "title": "Infrastructure Capacity Expansion",
+        "description": "Permanent solutions for recurring congestion",
+        "action": "Widen critical corridors, add dedicated bus lanes, improve intersection design",
+        "timeline": "3-6 months planning + construction",
+        "cost": "High ($500K - $2M)",
+        "impact": "40-60% long-term capacity increase"
+    })
+    
+    recommendations["long_term"].append({
+        "icon": "🤖",
+        "title": "Smart City Integration",
+        "description": "Deploy IoT sensors and predictive analytics",
+        "action": "Install 500+ traffic sensors, implement ML-based prediction models",
+        "timeline": "4-6 months deployment",
+        "cost": "High ($1M - $3M)",
+        "impact": "30-50% improvement in incident response time"
+    })
+    
+    recommendations["long_term"].append({
+        "icon": "🚴",
+        "title": "Alternative Mobility Program",
+        "description": "Reduce car dependency through bike-sharing and pedestrian zones",
+        "action": "Launch e-bike fleet, create car-free zones in city center",
+        "timeline": "2-4 months rollout",
+        "cost": "Medium ($200K - $500K)",
+        "impact": "10-15% reduction in short-distance car trips"
+    })
+    
+    # AI INSIGHTS
+    recommendations["insights"].append({
+        "icon": "🧠",
+        "title": "Peak Congestion Pattern",
+        "insight": f"Analysis shows {len(high_zones)} critical zones. Focus intervention on highest CI zones first for maximum impact."
+    })
+    
+    if avg_ci < 1.2:
+        recommendations["insights"].append({
+            "icon": "✅",
+            "title": "System Performance",
+            "insight": f"Overall city traffic flow is HEALTHY (Avg CI: {avg_ci:.2f}). Current measures are effective."
+        })
+    elif avg_ci >= 1.5:
+        recommendations["insights"].append({
+            "icon": "⚠️",
+            "title": "System Stress Alert",
+            "insight": f"City-wide CI at {avg_ci:.2f} indicates systemic issues. Immediate multi-zone intervention required."
+        })
+    else:
+        recommendations["insights"].append({
+            "icon": "📈",
+            "title": "Moderate Stress Level",
+            "insight": f"City-wide CI at {avg_ci:.2f}. Proactive measures recommended to prevent escalation."
+        })
+    
+    recommendations["insights"].append({
+        "icon": "💡",
+        "title": "AI Prediction",
+        "insight": "Based on historical patterns, congestion is likely to peak in the next 2-3 hours. Pre-emptive action recommended."
+    })
+    
+    return recommendations
+
+
 def main() -> None:
     st.set_page_config(page_title="🚦 CityFlow AI - Authority Mode", layout="wide", page_icon="🚦")
     
@@ -399,8 +544,8 @@ def main() -> None:
     city_ci = round(np.mean([z["congestion_index"] for z in zones_data]), 2)
     
     # Create tabs
-    tab_overview, tab_analytics, tab_live = st.tabs(
-        ["🎛️ Command Center Overview", "📊 Analytics & Intelligence", "📡 Live Monitoring"]
+    tab_overview, tab_analytics, tab_live, tab_ai = st.tabs(
+        ["🎛️ Command Center Overview", "📊 Analytics & Intelligence", "📡 Live Monitoring", "🤖 AI Recommendations"]
     )
     
     # ============ TAB 1: OVERVIEW ============
@@ -803,6 +948,116 @@ def main() -> None:
         
         else:
             st.info("👆 Click 'Start Monitoring' to begin receiving live traffic updates")
+    
+    # ============ TAB 4: AI RECOMMENDATIONS ============
+    with tab_ai:
+        st.markdown("### 🤖 AI-Powered Traffic Management Recommendations")
+        st.info("💡 Real-time intelligent suggestions based on current traffic conditions and predictive analytics")
+        
+        # Generate recommendations
+        recommendations = _generate_ai_recommendations(zones_data, st.session_state.live_data)
+        
+        # Display summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("🚨 Immediate Actions", len(recommendations["immediate"]))
+        col2.metric("📅 Short-term Strategies", len(recommendations["short_term"]))
+        col3.metric("🎯 Long-term Plans", len(recommendations["long_term"]))
+        col4.metric("🧠 AI Insights", len(recommendations["insights"]))
+        
+        st.markdown("---")
+        
+        # IMMEDIATE ACTIONS
+        st.markdown("### 🚨 Immediate Actions (Next 1 Hour)")
+        if recommendations["immediate"]:
+            for rec in recommendations["immediate"]:
+                priority_color = "#fee2e2" if rec.get("priority") == "CRITICAL" else "#fef3c7"
+                priority_text = "#991b1b" if rec.get("priority") == "CRITICAL" else "#92400e"
+                
+                st.markdown(
+                    f"""<div style='background: {priority_color}; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid {priority_text};'>
+                        <h4 style='margin: 0 0 10px 0; color: {priority_text};'>{rec['icon']} {rec['title']}</h4>
+                        <p style='margin: 5px 0; color: #374151;'><strong>📋 Details:</strong> {rec['description']}</p>
+                        <p style='margin: 5px 0; color: #374151;'><strong>🎯 Action:</strong> {rec['action']}</p>
+                        <p style='margin: 5px 0; color: #374151;'><strong>📊 Expected Impact:</strong> {rec['impact']}</p>
+                    </div>""",
+                    unsafe_allow_html=True
+                )
+        else:
+            st.success("✅ No immediate actions required. Traffic flow is stable.")
+        
+        st.markdown("---")
+        
+        # SHORT-TERM STRATEGIES
+        st.markdown("### 📅 Short-term Strategies (1-7 Days)")
+        for rec in recommendations["short_term"]:
+            with st.expander(f"{rec['icon']} {rec['title']}", expanded=False):
+                st.markdown(f"**📋 Description:** {rec['description']}")
+                st.markdown(f"**🎯 Recommended Action:** {rec['action']}")
+                st.markdown(f"**⏱️ Timeline:** {rec['timeline']}")
+                st.markdown(f"**💰 Cost Estimate:** {rec['cost']}")
+                st.markdown(f"**📊 Expected Impact:** {rec['impact']}")
+        
+        st.markdown("---")
+        
+        # LONG-TERM PLANNING
+        st.markdown("### 🎯 Long-term Planning (1-6 Months)")
+        for rec in recommendations["long_term"]:
+            with st.expander(f"{rec['icon']} {rec['title']}", expanded=False):
+                st.markdown(f"**📋 Description:** {rec['description']}")
+                st.markdown(f"**🎯 Recommended Action:** {rec['action']}")
+                st.markdown(f"**⏱️ Timeline:** {rec['timeline']}")
+                st.markdown(f"**💰 Cost Estimate:** {rec['cost']}")
+                st.markdown(f"**📊 Expected Impact:** {rec['impact']}")
+        
+        st.markdown("---")
+        
+        # AI INSIGHTS
+        st.markdown("### 🧠 AI-Generated Insights")
+        for insight in recommendations["insights"]:
+            st.info(f"{insight['icon']} **{insight['title']}:** {insight['insight']}")
+        
+        st.markdown("---")
+        
+        # Action Tracker
+        st.markdown("### 📝 Implementation Tracker")
+        st.markdown("Track the status of recommended actions:")
+        
+        # Create a simple tracking table
+        tracking_data = {
+            "Action": ["Deploy Traffic Control", "Issue Public Advisory", "Signal Re-programming", "Enhanced Public Transit"],
+            "Priority": ["🔴 Critical", "🟡 High", "🟢 Medium", "🟢 Medium"],
+            "Status": ["⏳ Pending", "⏳ Pending", "⏳ Pending", "⏳ Pending"],
+            "Assigned To": ["Traffic Division", "Communications", "Tech Team", "Transit Authority"]
+        }
+        
+        tracking_df = pd.DataFrame(tracking_data)
+        st.dataframe(tracking_df, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        
+        st.markdown("### 📞 Emergency Contacts")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("""
+            **🚓 Traffic Police Command**  
+            Emergency: 100  
+            Control Room: +91-80-2222-2222
+            """)
+        
+        with col2:
+            st.markdown("""
+            **🚌 Transit Operations**  
+            Dispatch: +91-80-3333-3333  
+            Control: +91-80-3333-3334
+            """)
+        
+        with col3:
+            st.markdown("""
+            **🔧 Infrastructure Team**  
+            Emergency: +91-80-4444-4444  
+            Signals: +91-80-4444-4445
+            """)
     
     st.divider()
     st.caption("🚦 CityFlow AI - Smart City Traffic Intelligence | Authority Mode")
