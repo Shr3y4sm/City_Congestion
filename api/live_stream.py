@@ -13,14 +13,21 @@ Features:
 
 import asyncio
 import sys
+import os
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Set
+from typing import Optional, Set, Dict
 import traceback
+import requests
+from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# Load environment variables
+load_dotenv()
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -53,13 +60,36 @@ class TrafficUpdate(BaseModel):
 
 
 # ============================================================================
+# LIFESPAN HANDLER
+# ============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    # Startup
+    print("[STARTUP] Application starting...")
+    yield
+    # Shutdown
+    print("[SHUTDOWN] Stopping monitoring and closing connections...")
+    state.stop_monitoring()
+    
+    # Close all WebSocket connections
+    for connection in list(state.active_connections):
+        try:
+            await connection.close()
+        except:
+            pass
+
+
+# ============================================================================
 # FASTAPI APPLICATION
 # ============================================================================
 
 app = FastAPI(
     title="CityFlow AI - Live Traffic Monitor",
     description="Real-time traffic monitoring and alerting service",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for web clients
@@ -70,6 +100,173 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# MAPPLS TRAFFIC SERVICE (for Live Monitoring only)
+# ============================================================================
+
+class MappIsTrafficService:
+    """Traffic service using Mappls API for real-time Indian traffic data"""
+    
+    def __init__(self):
+        self.api_key = os.getenv("MAPPLS_API_KEY")
+        if not self.api_key:
+            print("[WARNING] MAPPLS_API_KEY not found in .env. Using fallback mode.")
+        
+        self.GEOCODE_URL = "https://apis.mappls.com/advancedmaps/v1/{}/geo_code"
+        self.ROUTE_URL = "https://apis.mappls.com/advancedmaps/v1/{}/route_adv/driving/{};{}"
+        
+        # Cache for geocoding results
+        self._geocode_cache = {}
+    
+    def geocode_address(self, address: str) -> tuple:
+        """Geocode address using Mappls API"""
+        if address in self._geocode_cache:
+            return self._geocode_cache[address]
+        
+        if not self.api_key:
+            # Fallback to hardcoded Bangalore coordinates
+            fallback_coords = {
+                "koramangala": (12.9352, 77.6245),
+                "mg road": (12.9716, 77.6412),
+                "whitefield": (12.9698, 77.7499),
+                "electronic city": (12.8387, 77.6873),
+            }
+            
+            for key, coords in fallback_coords.items():
+                if key in address.lower():
+                    self._geocode_cache[address] = coords
+                    return coords
+            
+            # Default to central Bangalore
+            coords = (12.9716, 77.5946)
+            self._geocode_cache[address] = coords
+            return coords
+        
+        try:
+            url = self.GEOCODE_URL.format(self.api_key)
+            params = {"address": address}
+            
+            response = requests.get(url, params=params, timeout=5)
+            
+            if response.ok:
+                data = response.json()
+                if "copResults" in data and len(data["copResults"]) > 0:
+                    result = data["copResults"][0]
+                    lat = float(result["latitude"])
+                    lon = float(result["longitude"])
+                    coords = (lat, lon)
+                    self._geocode_cache[address] = coords
+                    return coords
+        
+        except Exception as e:
+            print(f"[MAPPLS] Geocoding error: {e}")
+        
+        # Fallback
+        coords = (12.9716, 77.5946)
+        self._geocode_cache[address] = coords
+        return coords
+    
+    def get_routes(self, origin: str, destination: str) -> Dict:
+        """Fetch routes with real-time traffic from Mappls API"""
+        try:
+            # Geocode addresses
+            origin_lat, origin_lon = self.geocode_address(origin)
+            dest_lat, dest_lon = self.geocode_address(destination)
+            
+            if not self.api_key:
+                # Return mock data with realistic Indian traffic
+                import random
+                base_distance = 8.5  # km
+                base_duration = 15   # minutes base
+                
+                # Add traffic variability
+                current_hour = datetime.now().hour
+                if 7 <= current_hour < 10 or 17 <= current_hour < 20:
+                    traffic_multiplier = random.uniform(1.5, 2.5)  # Peak hours
+                else:
+                    traffic_multiplier = random.uniform(0.9, 1.3)   # Off-peak
+                
+                routes = [
+                    {
+                        "distance_km": base_distance,  # kilometers
+                        "duration_min": base_duration * traffic_multiplier,  # minutes
+                        "geometry": "mock_geometry"
+                    }
+                ]
+                
+                print(f"[MAPPLS FALLBACK] Generated traffic data: {base_duration}min -> {base_duration * traffic_multiplier:.1f}min")
+                
+                return {
+                    "origin": origin,
+                    "destination": destination,
+                    "routes": routes
+                }
+            
+            # Use Mappls API
+            origin_coord = f"{origin_lat},{origin_lon}"
+            dest_coord = f"{dest_lat},{dest_lon}"
+            
+            url = self.ROUTE_URL.format(self.api_key, origin_coord, dest_coord)
+            params = {
+                "rtype": "0",  # 0 = optimal, 1 = shortest
+                "region": "IND"
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.ok:
+                data = response.json()
+                routes = []
+                
+                if "routes" in data and len(data["routes"]) > 0:
+                    for route in data["routes"]:
+                        distance_m = int(route.get("distance", 0))
+                        duration_s = int(route.get("duration", 0))
+                        routes.append({
+                            "distance_km": distance_m / 1000.0,  # Convert meters to km
+                            "duration_min": duration_s / 60.0,  # Convert seconds to minutes
+                            "geometry": route.get("geometry", "")
+                        })
+                
+                print(f"[MAPPLS] Successfully fetched {len(routes)} route(s) with live traffic")
+                
+                return {
+                    "origin": origin,
+                    "destination": destination,
+                    "routes": routes if routes else self._fallback_routes()
+                }
+            
+            else:
+                print(f"[MAPPLS] API error: {response.status_code}")
+                return self._fallback_routes()
+        
+        except Exception as e:
+            print(f"[MAPPLS] Error: {e}")
+            return self._fallback_routes()
+    
+    def _fallback_routes(self) -> Dict:
+        """Generate fallback route data"""
+        import random
+        base_distance_km = 8.5  # kilometers
+        base_duration_min = 15  # minutes
+        
+        current_hour = datetime.now().hour
+        if 7 <= current_hour < 10 or 17 <= current_hour < 20:
+            traffic_multiplier = random.uniform(1.5, 2.5)
+        else:
+            traffic_multiplier = random.uniform(0.9, 1.3)
+        
+        return {
+            "origin": "Unknown",
+            "destination": "Unknown",
+            "routes": [{
+                "distance_km": base_distance_km,
+                "duration_min": base_duration_min * traffic_multiplier,
+                "geometry": "fallback"
+            }]
+        }
 
 
 # ============================================================================
@@ -87,8 +284,11 @@ class MonitoringState:
         self.current_destination: Optional[str] = None
         
         # Initialize services
-        self.traffic_service = TrafficService()
+        # Use Mappls API for live monitoring (better Indian traffic data)
+        self.traffic_service = MappIsTrafficService()
         self.congestion_engine = CongestionEngine()
+        
+        print("[INIT] Live monitoring using Mappls API for real-time traffic")
     
     async def connect(self, websocket: WebSocket):
         """Add new WebSocket connection"""
@@ -152,7 +352,7 @@ class MonitoringState:
                 
                 # Broadcast to all connected clients
                 if update:
-                    await self.broadcast(update.dict())
+                    await self.broadcast(update.model_dump())
                     
                     # Log alerts
                     if update.alert:
@@ -192,12 +392,13 @@ class MonitoringState:
                 print("[WARNING] No routes after congestion analysis")
                 return None
             
-            # Use the best (least congested) route
-            best_route = analyzed[0]
+            # Use the best route from analyzed results
+            best_route_idx = analyzed['best_route_index']
+            best_route = analyzed['routes'][best_route_idx]
             
-            # Extract metrics
-            distance_km = best_route['distance'] / 1000  # meters to km
-            duration_min = best_route['actual_duration'] / 60  # seconds to minutes
+            # Extract metrics (already in correct units)
+            distance_km = best_route['distance_km']
+            duration_min = best_route['duration_min']
             congestion_index = best_route['congestion_index']
             congestion_level = best_route['congestion_level']
             
@@ -333,24 +534,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"[WS] Error: {e}")
         state.disconnect(websocket)
-
-
-# ============================================================================
-# SHUTDOWN HANDLER
-# ============================================================================
-
-@app.on_event("shutdown")
-async def shutdown():
-    """Clean up on application shutdown"""
-    print("[SHUTDOWN] Stopping monitoring and closing connections...")
-    state.stop_monitoring()
-    
-    # Close all WebSocket connections
-    for connection in list(state.active_connections):
-        try:
-            await connection.close()
-        except:
-            pass
 
 
 # ============================================================================
