@@ -144,11 +144,11 @@ class CongestionPredictor:
 if __name__ == "__main__":
     """Test the CongestionPredictor with various scenarios."""
     
-    print("🤖 CityFlow AI - ML Congestion Predictor\n")
+    print("CityFlow AI - ML Congestion Predictor\n")
     print("Training XGBoost model on synthetic data...")
     
     predictor = CongestionPredictor()
-    print("✓ Model trained successfully\n")
+    print("Model trained successfully\n")
     print("="*60)
     
     # Test scenarios
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     ]
     
     for scenario in scenarios:
-        print(f"\n📊 Scenario: {scenario['name']}")
+        print(f"\nScenario: {scenario['name']}")
         print(f"   Time: Hour {scenario['hour']}, Weekday {scenario['weekday']}")
         print(f"   Current Congestion: {scenario['current_index']}")
         print(f"   Distance: {scenario['distance_km']} km")
@@ -196,10 +196,10 @@ if __name__ == "__main__":
             scenario['distance_km']
         )
         
-        print(f"\n   🔮 Prediction (30 min ahead):")
+        print("\n   Prediction (30 min ahead):")
         print(f"      Congestion Level: {result['future_congestion_level']}")
         print(f"      Confidence: {result['confidence']*100:.0f}%")
         print("   " + "-"*56)
     
     print("\n" + "="*60)
-    print("\n✅ Prediction engine ready for deployment!")
+    print("\nPrediction engine ready for deployment!")

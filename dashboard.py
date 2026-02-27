@@ -13,18 +13,27 @@ from streamlit_folium import st_folium
 
 from services.traffic_service import TrafficService
 from services.congestion_engine import CongestionEngine
+from services.simulation_engine import SimulationEngine
 from ml.predictor import CongestionPredictor
 
 
 CO2_PER_KM = 0.21
+ICON_BASE = "https://unpkg.com/feather-icons/dist/icons"
+
+
+def _icon_html(name: str, size: int = 16) -> str:
+	return (
+		f"<img src='{ICON_BASE}/{name}.svg' width='{size}' height='{size}' "
+		"style='vertical-align: -3px; margin-right: 6px;'/>"
+	)
 
 
 def _congestion_badge(level: str) -> str:
 	if level == "HIGH":
-		return "🔴 HIGH"
+		return f"{_icon_html('alert-octagon')}HIGH"
 	if level == "MEDIUM":
-		return "🟡 MEDIUM"
-	return "🟢 LOW"
+		return f"{_icon_html('alert-triangle')}MEDIUM"
+	return f"{_icon_html('check-circle')}LOW"
 
 
 def _calculate_environmental_metrics(routes: list, best_index: int) -> dict:
@@ -59,6 +68,32 @@ def _build_map(origin_coords, dest_coords, routes: list, best_index: int) -> fol
 	folium.Marker(dest_coords, tooltip="Destination", icon=folium.Icon(color="red")).add_to(base_map)
 
 	return base_map
+
+
+def _simulate_intervention(route_data: dict, scenario: str, hour: int = None) -> dict:
+	"""
+	Simulate an intervention on route data.
+	
+	Args:
+		route_data: Route data with congestion metrics
+		scenario: Intervention scenario
+		hour: Current hour for peak hour detection
+		
+	Returns:
+		Simulation result
+	"""
+	zone_data = {
+		"zone_name": "Current Route",
+		"distance_km": route_data["distance_km"],
+		"actual_duration_min": route_data["duration_min"],
+		"expected_duration_min": route_data["expected_duration_min"],
+		"congestion_index": route_data["congestion_index"],
+		"congestion_level": route_data["congestion_level"],
+		"risk_score": 0.0  # Placeholder
+	}
+	
+	engine = SimulationEngine()
+	return engine.simulate(zone_data, scenario, hour)
 
 
 def main() -> None:
@@ -151,7 +186,10 @@ def main() -> None:
         st.write(f"Actual Duration: {best['duration_min']} min")
         st.write(f"Expected Duration: {best['expected_duration_min']} min")
         st.write(f"Congestion Index: {best['congestion_index']}")
-        st.write(f"Congestion Level: {_congestion_badge(best['congestion_level'])}")
+        st.markdown(
+            f"Congestion Level: {_congestion_badge(best['congestion_level'])}",
+            unsafe_allow_html=True,
+        )
         st.write(f"Efficiency Ratio: {best['congestion_index']}x")
 
     st.divider()
@@ -172,9 +210,11 @@ def main() -> None:
 
     st.markdown("### 30-Minute Forecast")
     level = forecast["future_congestion_level"]
-    emoji = "🟢" if level == "LOW" else "🟡" if level == "MEDIUM" else "🔴"
     with st.container():
-        st.write(f"Future Congestion Level: {emoji} {level}")
+        st.markdown(
+            f"Future Congestion Level: {_congestion_badge(level)}",
+            unsafe_allow_html=True,
+        )
         st.write(f"Confidence: {forecast['confidence'] * 100:.0f}%")
 
     st.divider()
@@ -189,6 +229,68 @@ def main() -> None:
 
     st.markdown("### Map Visualization")
     st_folium(route_map, width=1200, height=500, key="route_map", returned_objects=[])
+
+    st.divider()
+
+    st.markdown(
+        f"### {_icon_html('bar-chart-2', 18)}Policy Impact Simulator",
+        unsafe_allow_html=True,
+    )
+    st.markdown("Simulate traffic interventions and analyze their impact on congestion metrics.")
+
+    scenario_display_map = {
+        "None (Current State)": "none",
+        "Widen Road (+15% capacity)": "widen_road",
+        "Optimize Signals (+10% efficiency)": "optimize_signals",
+        "Road Under Repair (-20% capacity)": "road_under_repair",
+        "Heavy Vehicle Restriction (Peak Hours)": "heavy_vehicle_restriction"
+    }
+
+    selected_scenario_display = st.selectbox(
+        "Select Intervention Scenario",
+        list(scenario_display_map.keys()),
+        key="scenario_selector"
+    )
+
+    selected_scenario_key = scenario_display_map[selected_scenario_display]
+
+    try:
+        now = datetime.now()
+        simulation_result = _simulate_intervention(
+            routes[best_index],
+            selected_scenario_key,
+            hour=now.hour
+        )
+
+        # Display before/after comparison
+        col_before, col_after = st.columns(2)
+
+        with col_before:
+            st.markdown("**Current State**")
+            st.metric("Congestion Index", simulation_result["before"]["ci"])
+            st.metric("Congestion Level", simulation_result["before"]["level"])
+            st.metric("Risk Score", simulation_result["before"]["risk_score"])
+
+        with col_after:
+            st.markdown("**After Intervention**")
+            st.metric("Congestion Index", simulation_result["after"]["ci"])
+            st.metric("Congestion Level", simulation_result["after"]["level"])
+            st.metric("Risk Score", simulation_result["after"]["risk_score"])
+
+        # Show improvement indicator
+        st.divider()
+        improvement_pct = simulation_result["improvement_percent"]
+
+        if selected_scenario_key != "none":
+            if improvement_pct > 0:
+                st.success(f"✅ Projected Improvement: **{improvement_pct:.2f}%**")
+            elif improvement_pct < 0:
+                st.error(f"⚠️  Projected Deterioration: **{abs(improvement_pct):.2f}%**")
+            else:
+                st.info("➡️  No significant impact projected")
+
+    except Exception as exc:
+        st.error(f"Simulation failed: {exc}")
 
     st.divider()
     st.caption("Built for Smart City Congestion Hackathon | CityFlow AI")

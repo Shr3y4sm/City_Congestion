@@ -171,7 +171,7 @@ if __name__ == "__main__":
     result = engine.analyze_routes(mock_data)
     
     # Display results
-    print("🚦 CityFlow AI - Congestion Analysis\n")
+    print("CityFlow AI - Congestion Analysis\n")
     print(f"Origin: {result['origin']}")
     print(f"Destination: {result['destination']}")
     print(f"\nCurrent time: {datetime.now().strftime('%A, %I:%M %p')}")
@@ -179,7 +179,7 @@ if __name__ == "__main__":
     
     for idx, route in enumerate(result['routes']):
         is_best = idx == result['best_route_index']
-        marker = "⭐ RECOMMENDED" if is_best else ""
+        marker = "[RECOMMENDED]" if is_best else ""
         
         print(f"Route {idx + 1} {marker}")
         print(f"  Distance:           {route['distance_km']} km")
@@ -190,7 +190,7 @@ if __name__ == "__main__":
         print()
     
     print(f"{'='*60}")
-    print(f"\n✅ Best Route: Route {result['best_route_index'] + 1}")
+    print(f"\nBest Route: Route {result['best_route_index'] + 1}")
     best = result['routes'][result['best_route_index']]
     print(f"   ({best['distance_km']} km, {best['duration_min']} min, "
           f"Congestion: {best['congestion_level']})")

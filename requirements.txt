@@ -8,3 +8,7 @@ streamlit
 folium
 polyline
 streamlit-folium
+plotly
+fastapi
+uvicorn
+websockets

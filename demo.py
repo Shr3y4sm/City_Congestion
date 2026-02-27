@@ -11,33 +11,31 @@ from services.congestion_engine import CongestionEngine
 
 def display_analysis(result: dict):
     """Display congestion analysis results in a formatted way."""
-    print("🚦 CityFlow AI - Intelligent Route Analysis\n")
-    print(f"📍 Origin:      {result['origin']}")
-    print(f"📍 Destination: {result['destination']}")
-    print(f"🕐 Time:        {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}")
+    print("CityFlow AI - Intelligent Route Analysis\n")
+    print(f"Origin:      {result['origin']}")
+    print(f"Destination: {result['destination']}")
+    print(f"Time:        {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}")
     print(f"\n{'='*70}\n")
     
     for idx, route in enumerate(result['routes']):
         is_best = idx == result['best_route_index']
-        marker = "⭐ RECOMMENDED" if is_best else "  "
+        marker = "[RECOMMENDED]" if is_best else ""
         
         print(f"{marker} Route {idx + 1}")
         print(f"   Distance:           {route['distance_km']} km")
         print(f"   Actual Duration:    {route['duration_min']} min")
         print(f"   Expected Duration:  {route['expected_duration_min']} min")
         print(f"   Congestion Index:   {route['congestion_index']}")
-        print(f"   Congestion Level:   🔴 {route['congestion_level']}" if route['congestion_level'] == "HIGH"
-              else f"   Congestion Level:   🟡 {route['congestion_level']}" if route['congestion_level'] == "MEDIUM"
-              else f"   Congestion Level:   🟢 {route['congestion_level']}")
+        print(f"   Congestion Level:   {route['congestion_level']}")
         print()
     
     print(f"{'='*70}")
     best = result['routes'][result['best_route_index']]
-    print(f"\n✅ RECOMMENDATION: Take Route {result['best_route_index'] + 1}")
-    print(f"   • Distance: {best['distance_km']} km")
-    print(f"   • Duration: {best['duration_min']} minutes")
-    print(f"   • Congestion: {best['congestion_level']}")
-    print(f"   • Efficiency: {best['congestion_index']}x expected time")
+    print(f"\nRECOMMENDATION: Take Route {result['best_route_index'] + 1}")
+    print(f"   - Distance: {best['distance_km']} km")
+    print(f"   - Duration: {best['duration_min']} minutes")
+    print(f"   - Congestion: {best['congestion_level']}")
+    print(f"   - Efficiency: {best['congestion_index']}x expected time")
 
 
 def main():
@@ -51,19 +49,19 @@ def main():
             origin = "MG Road, Bangalore"
             destination = "Koramangala, Bangalore"
         
-        print("🚗 Initializing CityFlow AI...\n")
+        print("Initializing CityFlow AI...\n")
         
         # Step 1: Fetch routes using TrafficService
-        print(f"📡 Fetching routes from OpenRouteService API...")
+        print("Fetching routes from OpenRouteService API...")
         traffic_service = TrafficService()
         route_data = traffic_service.get_routes(origin, destination)
-        print(f"✓ Found {len(route_data['routes'])} alternative routes\n")
+        print(f"Found {len(route_data['routes'])} alternative routes\n")
         
         # Step 2: Analyze congestion using CongestionEngine
-        print("🧠 Analyzing congestion patterns...")
+        print("Analyzing congestion patterns...")
         engine = CongestionEngine()
         analysis = engine.analyze_routes(route_data)
-        print("✓ Congestion analysis complete\n")
+        print("Congestion analysis complete\n")
         
         print(f"{'='*70}\n")
         
@@ -71,10 +69,10 @@ def main():
         display_analysis(analysis)
         
     except ValueError as e:
-        print(f"❌ Input Error: {e}")
+        print(f"Input Error: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
 
 
@@ -87,5 +85,5 @@ if __name__ == "__main__":
     main()
     
     print("\n" + "="*70)
-    print("\n💡 Usage: python demo.py \"Origin Address\" \"Destination Address\"")
+    print("\nUsage: python demo.py \"Origin Address\" \"Destination Address\"")
     print("="*70 + "\n")

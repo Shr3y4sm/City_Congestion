@@ -186,7 +186,7 @@ if __name__ == "__main__":
     """Test the TrafficService with a sample query."""
     try:
         service = TrafficService()
-        print("🚗 CityFlow AI - Traffic Service Demo\n")
+        print("CityFlow AI - Traffic Service Demo\n")
         print("Fetching routes in Bangalore...\n")
         
         result = service.get_routes(
@@ -205,4 +205,4 @@ if __name__ == "__main__":
             print(f"  Geometry: {route['geometry'][:50]}...\n")
             
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"Error: {str(e)}")
