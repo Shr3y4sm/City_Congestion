@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from traffic_service import TrafficService
 from services.congestion_engine import CongestionEngine
+from services.tomtom_provider import TomTomProvider
 
 
 # ============================================================================
@@ -270,6 +271,180 @@ class MappIsTrafficService:
 
 
 # ============================================================================
+# TOMTOM TRAFFIC SERVICE (Alternative Provider)
+# ============================================================================
+
+class TomTomTrafficService:
+    """Traffic service using TomTom API for real-time global traffic data"""
+    
+    def __init__(self):
+        self.api_key = os.getenv("TOMTOM_API_KEY")
+        if not self.api_key:
+            print("[WARNING] TOMTOM_API_KEY not found in .env. Using fallback mode.")
+        
+        self.GEOCODE_URL = "https://api.tomtom.com/search/2/geocode/{}.json"
+        self.ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute"
+        
+        # Cache for geocoding results
+        self._geocode_cache = {}
+    
+    def geocode_address(self, address: str) -> tuple:
+        """Geocode address using TomTom Search API"""
+        if address in self._geocode_cache:
+            return self._geocode_cache[address]
+        
+        if not self.api_key:
+            # Fallback to hardcoded coordinates
+            fallback_coords = {
+                "koramangala": (12.9352, 77.6245),
+                "mg road": (12.9716, 77.6412),
+                "whitefield": (12.9698, 77.7499),
+                "electronic city": (12.8387, 77.6873),
+                "bangalore": (12.9716, 77.5946),
+            }
+            
+            for key, coords in fallback_coords.items():
+                if key in address.lower():
+                    self._geocode_cache[address] = coords
+                    return coords
+            
+            # Default to central Bangalore
+            coords = (12.9716, 77.5946)
+            self._geocode_cache[address] = coords
+            return coords
+        
+        try:
+            url = self.GEOCODE_URL.format(address)
+            params = {"key": self.api_key, "limit": 1}
+            
+            response = requests.get(url, params=params, timeout=5)
+            
+            if response.ok:
+                data = response.json()
+                if "results" in data and len(data["results"]) > 0:
+                    result = data["results"][0]
+                    pos = result["position"]
+                    coords = (pos["lat"], pos["lon"])
+                    self._geocode_cache[address] = coords
+                    return coords
+        
+        except Exception as e:
+            print(f"[TOMTOM] Geocoding error: {e}")
+        
+        # Fallback
+        coords = (12.9716, 77.5946)
+        self._geocode_cache[address] = coords
+        return coords
+    
+    def get_routes(self, origin: str, destination: str) -> Dict:
+        """Fetch routes with real-time traffic from TomTom API"""
+        try:
+            # Geocode addresses
+            origin_lat, origin_lon = self.geocode_address(origin)
+            dest_lat, dest_lon = self.geocode_address(destination)
+            
+            if not self.api_key:
+                # Return mock data with realistic traffic
+                import random
+                base_distance = 8.5  # km
+                base_duration = 15   # minutes base
+                
+                # Add traffic variability
+                current_hour = datetime.now().hour
+                if 7 <= current_hour < 10 or 17 <= current_hour < 20:
+                    traffic_multiplier = random.uniform(1.5, 2.5)  # Peak hours
+                else:
+                    traffic_multiplier = random.uniform(0.9, 1.3)   # Off-peak
+                
+                routes = [{
+                    "distance_km": base_distance,
+                    "duration_min": base_duration * traffic_multiplier,
+                    "geometry": "mock_geometry"
+                }]
+                
+                print(f"[TOMTOM FALLBACK] Generated traffic data: {base_duration}min -> {base_duration * traffic_multiplier:.1f}min")
+                
+                return {
+                    "origin": origin,
+                    "destination": destination,
+                    "routes": routes
+                }
+            
+            # Use TomTom API
+            origin_coord = f"{origin_lat},{origin_lon}"
+            dest_coord = f"{dest_lat},{dest_lon}"
+            
+            url = f"{self.ROUTE_URL}/{origin_coord}:{dest_coord}/json"
+            params = {
+                "key": self.api_key,
+                "traffic": "true"
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.ok:
+                data = response.json()
+                routes = []
+                
+                if "routes" in data and len(data["routes"]) > 0:
+                    for route in data["routes"]:
+                        summary = route.get("summary", {})
+                        
+                        travel_time_s = summary.get("travelTimeInSeconds", 0)
+                        no_traffic_s = summary.get("noTrafficTravelTimeInSeconds", 0)
+                        distance_m = summary.get("lengthInMeters", 0)
+                        traffic_delay_s = summary.get("trafficDelayInSeconds", 0)
+                        
+                        # Calculate duration in minutes
+                        duration_min = travel_time_s / 60.0
+                        distance_km = distance_m / 1000.0
+                        
+                        routes.append({
+                            "distance_km": distance_km,
+                            "duration_min": duration_min,
+                            "geometry": route.get("legs", [{}])[0].get("points", [])
+                        })
+                
+                print(f"[TOMTOM] Successfully fetched {len(routes)} route(s) with live traffic")
+                
+                return {
+                    "origin": origin,
+                    "destination": destination,
+                    "routes": routes if routes else self._fallback_routes()
+                }
+            
+            else:
+                print(f"[TOMTOM] API error: {response.status_code}")
+                return self._fallback_routes()
+        
+        except Exception as e:
+            print(f"[TOMTOM] Error: {e}")
+            return self._fallback_routes()
+    
+    def _fallback_routes(self) -> Dict:
+        """Generate fallback route data"""
+        import random
+        base_distance_km = 8.5  # kilometers
+        base_duration_min = 15  # minutes
+        
+        current_hour = datetime.now().hour
+        if 7 <= current_hour < 10 or 17 <= current_hour < 20:
+            traffic_multiplier = random.uniform(1.5, 2.5)
+        else:
+            traffic_multiplier = random.uniform(0.9, 1.3)
+        
+        return {
+            "origin": "Unknown",
+            "destination": "Unknown",
+            "routes": [{
+                "distance_km": base_distance_km,
+                "duration_min": base_duration_min * traffic_multiplier,
+                "geometry": "fallback"
+            }]
+        }
+
+
+# ============================================================================
 # GLOBAL STATE
 # ============================================================================
 
@@ -277,18 +452,56 @@ class MonitoringState:
     """Manages monitoring state and WebSocket connections"""
     
     def __init__(self):
+        """Initialize monitoring state with TomTom provider."""
         self.active_connections: Set[WebSocket] = set()
         self.monitoring_task: Optional[asyncio.Task] = None
         self.is_monitoring: bool = False
         self.current_origin: Optional[str] = None
         self.current_destination: Optional[str] = None
         
-        # Initialize services
-        # Use Mappls API for live monitoring (better Indian traffic data)
-        self.traffic_service = MappIsTrafficService()
-        self.congestion_engine = CongestionEngine()
+        # Initialize TomTom provider for live traffic data
+        try:
+            self.tomtom_provider = TomTomProvider()
+            self.provider_name = "TomTom"
+            print("[INIT] Live monitoring using TomTom API for real-time traffic")
+        except ValueError as e:
+            print(f"[WARNING] TomTom provider initialization failed: {e}")
+            print("[INIT] Using fallback mode with simulated data")
+            self.tomtom_provider = None
+            self.provider_name = "Fallback"
         
-        print("[INIT] Live monitoring using Mappls API for real-time traffic")
+        # Geocoding cache for address-to-coordinates conversion
+        self._geocode_cache = {}
+    
+    def _geocode_address(self, address: str) -> tuple:
+        """
+        Geocode address to coordinates.
+        Uses simple fallback mapping for common Bangalore locations.
+        """
+        if address in self._geocode_cache:
+            return self._geocode_cache[address]
+        
+        # Fallback coordinates for common locations
+        fallback_coords = {
+            "koramangala": (12.9352, 77.6245),
+            "mg road": (12.9716, 77.6412),
+            "whitefield": (12.9698, 77.7499),
+            "electronic city": (12.8387, 77.6873),
+            "indiranagar": (12.9719, 77.6412),
+            "bangalore": (12.9716, 77.5946),
+        }
+        
+        # Try to match address to known locations
+        address_lower = address.lower()
+        for key, coords in fallback_coords.items():
+            if key in address_lower:
+                self._geocode_cache[address] = coords
+                return coords
+        
+        # Default to central Bangalore
+        default_coords = (12.9716, 77.5946)
+        self._geocode_cache[address] = default_coords
+        return default_coords
     
     async def connect(self, websocket: WebSocket):
         """Add new WebSocket connection"""
@@ -358,8 +571,8 @@ class MonitoringState:
                     if update.alert:
                         print(f"[ALERT] High congestion detected! CI={update.congestion_index:.2f}")
                 
-                # Wait 20 seconds before next poll
-                await asyncio.sleep(20)
+                # Wait 25 seconds before next poll (to stay within API quota)
+                await asyncio.sleep(25)
                 
             except asyncio.CancelledError:
                 print("[MONITOR] Monitoring stopped")
@@ -367,57 +580,64 @@ class MonitoringState:
             except Exception as e:
                 print(f"[ERROR] Monitoring loop error: {e}")
                 traceback.print_exc()
-                await asyncio.sleep(20)  # Continue despite errors
+                await asyncio.sleep(25)  # Continue despite errors
     
     async def _fetch_traffic_update(self) -> Optional[TrafficUpdate]:
-        """Fetch current traffic data and compute congestion metrics"""
+        """
+        Fetch current traffic data using TomTom provider.
+        Runs in thread pool to avoid blocking async loop.
+        """
         try:
-            # Get routes from traffic service (runs in thread pool to avoid blocking)
-            loop = asyncio.get_event_loop()
-            routes = await loop.run_in_executor(
-                None,
-                self.traffic_service.get_routes,
-                self.current_origin,
-                self.current_destination
-            )
+            # Geocode addresses to coordinates
+            origin_lat, origin_lon = self._geocode_address(self.current_origin)
+            dest_lat, dest_lon = self._geocode_address(self.current_destination)
             
-            if not routes or len(routes) == 0:
-                print("[WARNING] No routes returned from API")
-                return None
+            if self.tomtom_provider:
+                # Call TomTom provider in thread pool (API call is blocking)
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    self.tomtom_provider.get_live_corridor_data,
+                    origin_lat, origin_lon,
+                    dest_lat, dest_lon
+                )
+            else:
+                # Fallback: generate simulated data
+                import random
+                base_distance = 7.5
+                base_duration = 20
+                
+                # Add realistic traffic variation
+                current_hour = datetime.now().hour
+                if 7 <= current_hour < 10 or 17 <= current_hour < 20:
+                    traffic_factor = random.uniform(1.5, 2.5)  # Peak hours
+                else:
+                    traffic_factor = random.uniform(0.9, 1.3)  # Off-peak
+                
+                result = {
+                    "distance_km": base_distance,
+                    "duration_min": base_duration * traffic_factor,
+                    "congestion_index": traffic_factor,
+                    "congestion_level": "HIGH" if traffic_factor >= 1.5 else (
+                        "MEDIUM" if traffic_factor >= 1.2 else "LOW"
+                    ),
+                    "risk_score": min(traffic_factor * 5, 10.0)
+                }
+                print(f"[FALLBACK] Generated simulated traffic data")
             
-            # Analyze congestion for all routes
-            analyzed = self.congestion_engine.analyze_routes(routes)
+            # Set alert based on congestion threshold
+            alert = result["congestion_index"] >= 1.5
             
-            if not analyzed or len(analyzed) == 0:
-                print("[WARNING] No routes after congestion analysis")
-                return None
-            
-            # Use the best route from analyzed results
-            best_route_idx = analyzed['best_route_index']
-            best_route = analyzed['routes'][best_route_idx]
-            
-            # Extract metrics (already in correct units)
-            distance_km = best_route['distance_km']
-            duration_min = best_route['duration_min']
-            congestion_index = best_route['congestion_index']
-            congestion_level = best_route['congestion_level']
-            
-            # Calculate risk score (CI * 5, clamped to 10)
-            risk_score = min(congestion_index * 5, 10.0)
-            
-            # Trigger alert if congestion is high
-            alert = congestion_index > 1.5
-            
-            # Create update object
+            # Create update object with consistent structure
             update = TrafficUpdate(
                 timestamp=datetime.now().isoformat(),
                 origin=self.current_origin,
                 destination=self.current_destination,
-                distance_km=round(distance_km, 2),
-                duration_min=round(duration_min, 2),
-                congestion_index=round(congestion_index, 2),
-                congestion_level=congestion_level,
-                risk_score=round(risk_score, 2),
+                distance_km=result["distance_km"],
+                duration_min=result["duration_min"],
+                congestion_index=result["congestion_index"],
+                congestion_level=result["congestion_level"],
+                risk_score=result["risk_score"],
                 alert=alert
             )
             
@@ -481,7 +701,8 @@ async def get_status():
         "is_monitoring": state.is_monitoring,
         "origin": state.current_origin,
         "destination": state.current_destination,
-        "connected_clients": len(state.active_connections)
+        "connected_clients": len(state.active_connections),
+        "provider": state.provider_name
     }
 
 
@@ -491,7 +712,8 @@ async def root():
     return {
         "service": "CityFlow AI - Live Traffic Monitor",
         "status": "operational",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "traffic_provider": state.provider_name
     }
 
 

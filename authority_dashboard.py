@@ -301,6 +301,18 @@ def _create_heatmap(zones_data: list) -> folium.Map:
 def _start_monitoring(origin: str, destination: str) -> bool:
     """Start monitoring via REST API."""
     try:
+        # First check if monitoring is already active
+        status_response = requests.get(f"{API_BASE}/status", timeout=5)
+        status_response.raise_for_status()
+        status = status_response.json()
+        
+        # If monitoring is already active, stop it first
+        if status.get("is_monitoring", False):
+            stop_response = requests.post(f"{API_BASE}/stop-monitoring", timeout=5)
+            stop_response.raise_for_status()
+            print("[INFO] Stopped existing monitoring session")
+        
+        # Now start new monitoring
         response = requests.post(
             f"{API_BASE}/start-monitoring",
             json={"origin": origin, "destination": destination},
@@ -377,6 +389,10 @@ def main() -> None:
         st.session_state.data_queue = None
     if "ws_connected" not in st.session_state:
         st.session_state.ws_connected = False
+    if "update_logs" not in st.session_state:
+        st.session_state.update_logs = []  # Store all updates for log display
+    if "update_counter" not in st.session_state:
+        st.session_state.update_counter = 0  # Count updates
     
     # Generate mock data
     zones_data = _generate_mock_zones_data()
@@ -546,6 +562,8 @@ def main() -> None:
                     if _start_monitoring(origin, destination):
                         st.session_state.live_monitoring_active = True
                         st.session_state.live_data = None
+                        st.session_state.update_logs = []  # Clear logs on new session
+                        st.session_state.update_counter = 0
                         
                         # Create queue for WebSocket data
                         st.session_state.data_queue = Queue()
@@ -574,6 +592,8 @@ def main() -> None:
                 st.session_state.live_monitoring_active = False
                 st.session_state.ws_connected = False
                 st.session_state.live_data = None
+                st.session_state.update_logs = []
+                st.session_state.update_counter = 0
                 st.success("Monitoring stopped")
                 st.rerun()
         
@@ -599,6 +619,16 @@ def main() -> None:
                     # Only store if it's a valid traffic update with all required fields
                     elif all(key in data for key in ['origin', 'destination', 'congestion_index', 'timestamp']):
                         st.session_state.live_data = data
+                        # Add to update logs with counter
+                        st.session_state.update_counter += 1
+                        log_entry = {
+                            "update_number": st.session_state.update_counter,
+                            "data": data.copy()
+                        }
+                        st.session_state.update_logs.append(log_entry)
+                        # Keep only last 20 updates to prevent memory issues
+                        if len(st.session_state.update_logs) > 20:
+                            st.session_state.update_logs = st.session_state.update_logs[-20:]
             except Exception as e:
                 pass  # Queue empty or other non-critical error
         
@@ -610,114 +640,166 @@ def main() -> None:
             else:
                 st.warning(f"{_icon_html('wifi-off', 16)} Connecting...", icon="⏳")
             
-            st.markdown("### Live Traffic Data")
+            # Create two columns: current data and update log
+            col_current, col_log = st.columns([1, 1])
             
-            if st.session_state.live_data:
-                data = st.session_state.live_data
+            with col_current:
+                st.markdown("### Live Traffic Data")
                 
-                # Validate that we have all required fields
-                required_fields = ['origin', 'destination', 'distance_km', 'duration_min', 
-                                  'congestion_index', 'congestion_level', 'risk_score', 
-                                  'alert', 'timestamp']
-                
-                if all(field in data for field in required_fields):
-                    # Alert banner
-                    if data.get("alert"):
-                        st.error(
-                            f"{_icon_html('alert-triangle', 20)} **CONGESTION ALERT** – Immediate Action Required",
-                            icon="🚨"
+                if st.session_state.live_data:
+                    data = st.session_state.live_data
+                    
+                    # Validate that we have all required fields
+                    required_fields = ['origin', 'destination', 'distance_km', 'duration_min', 
+                                      'congestion_index', 'congestion_level', 'risk_score', 
+                                      'alert', 'timestamp']
+                    
+                    if all(field in data for field in required_fields):
+                        # Alert banner
+                        if data.get("alert"):
+                            st.error(
+                                f"{_icon_html('alert-triangle', 20)} **CONGESTION ALERT** – Immediate Action Required",
+                                icon="🚨"
+                            )
+                        else:
+                            st.success(
+                                f"{_icon_html('check-circle', 20)} Traffic Flow Stable",
+                                icon="✅"
+                            )
+                        
+                        st.markdown("---")
+                        
+                        # Route info
+                        st.markdown(f"**Route:** {data['origin']} → {data['destination']}")
+                        timestamp = datetime.fromisoformat(data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+                        st.caption(f"Last Update: {timestamp}")
+                    
+                        st.markdown("---")
+                        
+                        # Key metrics
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            st.metric(
+                                label="Congestion Index",
+                                value=f"{data['congestion_index']}",
+                                delta=f"{data['congestion_level']}"
+                            )
+                        
+                        with col2:
+                            # Color code delta based on risk
+                            risk_color = "inverse" if data['risk_score'] > 7 else "normal"
+                            st.metric(
+                                label="Risk Score",
+                                value=f"{data['risk_score']}/10",
+                                delta=None
+                            )
+                        
+                        with col3:
+                            st.metric(
+                                label="Distance",
+                                value=f"{data['distance_km']} km",
+                                delta=None
+                            )
+                        
+                        with col4:
+                            st.metric(
+                                label="Duration",
+                                value=f"{data['duration_min']} min",
+                                delta=None
+                            )
+                        
+                        st.markdown("---")
+                        
+                        # Congestion level badge
+                        level = data['congestion_level']
+                        if level == "HIGH":
+                            badge_color = "#fee2e2"
+                            text_color = "#991b1b"
+                            icon = "alert-circle"
+                        elif level == "MEDIUM":
+                            badge_color = "#fef3c7"
+                            text_color = "#92400e"
+                            icon = "alert-triangle"
+                        else:
+                            badge_color = "#d1fae5"
+                            text_color = "#065f46"
+                            icon = "check-circle"
+                        
+                        st.markdown(
+                            f"""<div style='padding: 20px; background: {badge_color}; border-radius: 10px; text-align: center;'>
+                                <h2 style='color: {text_color}; margin: 0;'>
+                                    {_icon_html(icon, 30)} {level} CONGESTION
+                                </h2>
+                            </div>""",
+                            unsafe_allow_html=True
                         )
                     else:
-                        st.success(
-                            f"{_icon_html('check-circle', 20)} Traffic Flow Stable",
-                            icon="✅"
-                        )
-                    
-                    st.markdown("---")
-                    
-                    # Route info
-                    st.markdown(f"**Route:** {data['origin']} → {data['destination']}")
-                    timestamp = datetime.fromisoformat(data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-                    st.caption(f"Last Update: {timestamp}")
-                
-                    st.markdown("---")
-                    
-                    # Key metrics
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric(
-                            label="Congestion Index",
-                            value=f"{data['congestion_index']}",
-                            delta=f"{data['congestion_level']}"
-                        )
-                    
-                    with col2:
-                        # Color code delta based on risk
-                        risk_color = "inverse" if data['risk_score'] > 7 else "normal"
-                        st.metric(
-                            label="Risk Score",
-                            value=f"{data['risk_score']}/10",
-                            delta=None
-                        )
-                    
-                    with col3:
-                        st.metric(
-                            label="Distance",
-                            value=f"{data['distance_km']} km",
-                            delta=None
-                        )
-                    
-                    with col4:
-                        st.metric(
-                            label="Duration",
-                            value=f"{data['duration_min']} min",
-                            delta=None
-                        )
-                    
-                    st.markdown("---")
-                    
-                    # Congestion level badge
-                    level = data['congestion_level']
-                    if level == "HIGH":
-                        badge_color = "#fee2e2"
-                        text_color = "#991b1b"
-                        icon = "alert-circle"
-                    elif level == "MEDIUM":
-                        badge_color = "#fef3c7"
-                        text_color = "#92400e"
-                        icon = "alert-triangle"
-                    else:
-                        badge_color = "#d1fae5"
-                        text_color = "#065f46"
-                        icon = "check-circle"
-                    
-                    st.markdown(
-                        f"""<div style='padding: 20px; background: {badge_color}; border-radius: 10px; text-align: center;'>
-                            <h2 style='color: {text_color}; margin: 0;'>
-                                {_icon_html(icon, 30)} {level} CONGESTION
-                            </h2>
-                        </div>""",
-                        unsafe_allow_html=True
-                    )
-                
-                    # Auto-refresh every 2 seconds to check for new data
-                    import time
-                    time.sleep(2)
-                    st.rerun()
-                
+                        # Invalid data structure received
+                        st.warning("Received incomplete data. Waiting for valid traffic update...")
                 else:
-                    # Invalid data structure received
-                    st.warning("Received incomplete data. Waiting for valid traffic update...")
-                    import time
-                    time.sleep(2)
-                    st.rerun()
+                    st.info("Waiting for traffic data... First update will arrive within 25 seconds.")
             
-            else:
-                st.info("Waiting for traffic data... First update will arrive within 20 seconds.")
-                import time
-                time.sleep(3)
-                st.rerun()
+            # Display update logs in the right column
+            with col_log:
+                st.markdown("### 📋 Live Update Log")
+                st.caption(f"Updates arrive every ~25 seconds")
+                
+                if st.session_state.update_logs:
+                    # Create a scrollable container for logs
+                    log_container = st.container()
+                    
+                    with log_container:
+                        # Display updates in reverse order (newest first)
+                        for log_entry in reversed(st.session_state.update_logs):
+                            update_num = log_entry["update_number"]
+                            log_data = log_entry["data"]
+                            
+                            # Parse timestamp
+                            timestamp = datetime.fromisoformat(log_data['timestamp']).strftime('%H:%M:%S')
+                            
+                            # Determine colors based on congestion level
+                            level = log_data['congestion_level']
+                            if level == "HIGH":
+                                border_color = "#ef4444"
+                                bg_color = "#fee2e2"
+                                emoji = "🔴"
+                            elif level == "MEDIUM":
+                                border_color = "#f59e0b"
+                                bg_color = "#fef3c7"
+                                emoji = "🟡"
+                            else:
+                                border_color = "#10b981"
+                                bg_color = "#d1fae5"
+                                emoji = "🟢"
+                            
+                            # Build log entry HTML
+                            alert_html = ""
+                            if log_data.get("alert"):
+                                alert_html = '<div style="background: #dc2626; color: white; padding: 5px 10px; border-radius: 5px; margin-top: 8px; font-weight: bold;">⚠️ ALERT: HIGH CONGESTION DETECTED!</div>'
+                            
+                            log_html = f"""
+                            <div style="border-left: 4px solid {border_color}; background: {bg_color}; padding: 12px; margin-bottom: 12px; border-radius: 5px;">
+                                <div style="font-weight: bold; font-size: 14px; margin-bottom: 5px;">
+                                    {emoji} Update #{update_num} — {timestamp}
+                                </div>
+                                <div style="font-size: 12px; color: #374151; line-height: 1.6;">
+                                    <strong>Route:</strong> {log_data['origin']} → {log_data['destination']}<br>
+                                    <strong>Distance:</strong> {log_data['distance_km']} km | <strong>Duration:</strong> {log_data['duration_min']} min<br>
+                                    <strong>Congestion:</strong> {level} (Index: {log_data['congestion_index']}) | <strong>Risk:</strong> {log_data['risk_score']}/10
+                                </div>
+                                {alert_html}
+                            </div>
+                            """
+                            
+                            st.markdown(log_html, unsafe_allow_html=True)
+                else:
+                    st.info("No updates yet. Waiting for first traffic data...")
+            
+            # Auto-refresh every 2 seconds to check for new data
+            import time
+            time.sleep(2)
+            st.rerun()
         
         else:
             st.info("Click 'Start Monitoring' to begin receiving live traffic updates")
